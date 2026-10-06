@@ -75,6 +75,22 @@ public class InstallerServiceTest {
         assertFalse(Files.exists(root.resolve(".forbrick")));
     }
 
+    @Test public void unicodeDirectoryAndVersionIdRestoreExactly() throws Exception {
+        Path unicodeRoot = Files.createDirectory(root.resolve("中文 Minecraft"));
+        String id = "整合包 1.21.1";
+        Path json = unicodeRoot.resolve("versions").resolve(id).resolve(id + ".json");
+        Files.createDirectories(json.getParent());
+        byte[] original = "{\"mainClass\":\"net.minecraft.client.main.Main\",\"note\":\"保留中文\"}\r\n".getBytes(StandardCharsets.UTF_8);
+        Files.write(json, original);
+        InstallerService installer = new InstallerService(unicodeRoot);
+        installer.install(id);
+        assertEquals(id, installer.listInstalled().get(0).id);
+        installer.uninstallAll();
+        assertArrayEquals(original, Files.readAllBytes(json));
+        assertFalse(Files.exists(unicodeRoot.resolve(".forbrick")));
+        assertFalse(Files.exists(unicodeRoot.resolve("libraries")));
+    }
+
     @Test public void inheritedProfileAndUnrelatedChangesSurvive() throws Exception {
         Path json = profile("fabric-loader", "{\"inheritsFrom\":\"1.20.4\",\"libraries\":[{\"name\":\"org.example:old:1\"}]}\n");
         assertNull(service.listVersions().get(0).mainClass);

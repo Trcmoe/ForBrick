@@ -80,6 +80,8 @@ java -jar forbrick-installer-1.0.0.jar export-runtime --output "/path/to/forbric
 
 若路径含空格，按该启动器的参数规则把整个参数作为一个参数传递，例如 `"-javaagent:C:\My Games\forbrick-runtime.jar"`。Java 在游戏 `main` 之前执行 `premain`，因此此方式也能与已有加载器并用。
 
+Windows 的 Java 原生命令行会按系统代码页转换参数。如果完整路径含有当前系统代码页无法表示的字符，Java 可能把它们变成 `?`，在 ForBrick 执行前报找不到 JAR。手动 agent 建议使用 ASCII 路径；也可以把运行库放在游戏工作目录下，用 ASCII 相对路径参数。安装器支持中文目录和版本名，但无法修复外部启动器 / JVM 对命令行路径的转换。
+
 **手动方式的卸载：先移除该实例的 `-javaagent` 参数，再删除导出的 JAR。**安装器不能自动撤销用户在第三方启动器里手工填写的参数。不要把该参数加入 `JAVA_TOOL_OPTIONS`、`_JAVA_OPTIONS` 或系统全局 Java 配置。
 
 ## 构建与验证

@@ -71,18 +71,36 @@ public class RuntimeProcessTest {
         assertFalse(result.output.contains("Exception"));
     }
 
+    @Test public void unicodeWorkingDirectorySupportsRelativeRuntimePaths() throws Exception {
+        Path directory = Files.createDirectory(temp.getRoot().toPath().resolve("砖块 Minecraft"));
+        Files.write(directory.resolve("runtime with spaces.jar"), InstallerService.runtimeJar());
+        Result standalone = javaAt(directory, "-jar", "runtime with spaces.jar");
+        assertEquals("Child JVM output: " + standalone.output, 0, standalone.exit);
+        assertEquals("", standalone.output);
+        Result agent = javaAt(directory, "-javaagent:runtime with spaces.jar", "-cp",
+                System.getProperty("java.class.path"), GameMain.class.getName());
+        assertEquals("Child JVM output: " + agent.output, 0, agent.exit);
+        assertEquals("", agent.output);
+    }
+
     private Path runtime() throws Exception {
-        Path jar = temp.getRoot().toPath().resolve("砖块 runtime with spaces.jar");
+        // Match the shipped ASCII filename: Windows java.exe converts argv using CP_ACP.
+        Path jar = temp.getRoot().toPath().resolve("forbrick runtime with spaces.jar");
         Files.write(jar, InstallerService.runtimeJar());
         return jar;
     }
 
     private static Result java(String... arguments) throws Exception {
+        return javaAt(null, arguments);
+    }
+
+    private static Result javaAt(Path directory, String... arguments) throws Exception {
         List<String> command = new ArrayList<String>();
         String executable = System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT).contains("win") ? "java.exe" : "java";
         command.add(java.nio.file.Paths.get(System.getProperty("java.home"), "bin", executable).toString());
         command.addAll(Arrays.asList(arguments));
         ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
+        if (directory != null) builder.directory(directory.toFile());
         // CI runners may have diagnostic flags; test ForBrick's own output in isolation.
         builder.environment().remove("JAVA_TOOL_OPTIONS");
         builder.environment().remove("_JAVA_OPTIONS");
