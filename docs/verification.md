@@ -6,7 +6,7 @@
 
 - Windows 11，Zulu JDK 25.0.2，Maven 3.9.15：`mvn verify` 通过，22 项测试，0 失败、0 错误。
 - 17 项核心测试：正常安装、原始字节恢复、继承配置、额外配置保留、重复操作、共享库、缺失库修复、外部配置冲突、运行库被改写、损坏 / 丢失备份、安装中断、未知残留提示、路径限制、并发线程和独立进程、端口占用无写入、杀死持锁进程后恢复、中文目录及版本名。
-- 5 项独立 JVM / 运行库测试：独立 JAR 静默退出；Java agent 使原始 `main` 不执行；运行库只含 Java 8 字节码与清单、生成结果一致；无桌面环境时安装器给出 CLI 提示并返回非零状态；中文工作目录使用 ASCII 相对运行库路径。
+- 5 项独立 JVM / 运行库测试：独立 JAR 静默退出；Java agent 使原始 `main` 不执行；运行库只含 Java 8 字节码与清单、生成结果一致；无桌面环境时安装器给出 CLI 提示并返回非零状态；中文工作目录中的普通入口使用相对运行库路径、agent 使用目录外的 ASCII 绝对路径。
 - `UiSmoke` 在真实 Swing 组件上测试两个临时目录。验证输入新路径会禁用操作、切换语言不丢失待应用路径、安装只作用于应用后的目录、“一键卸载全部”精确恢复并清理管理文件和运行库。文档 PNG 是这个实际组件树的离屏渲染，未另画界面。
 
 ## 官方元数据样本
@@ -49,4 +49,4 @@ Linux 无桌面环境可在前面加 `xvfb-run -a`。界面测试自行创建 `t
 - 原始配置、恢复记录或暂存文件被破坏时，清理会报告冲突并保留可恢复的数据，不会虚报“无残留”。
 - 并发协调使用短暂的 `127.0.0.1:47691` 绑定，关闭后无锁文件；该端口冲突或本机安全策略禁止绑定会阻止写入。此机制不协调不同机器对共享目录的写入。
 - 目录链接 / junction 会保守拒绝。没有操作系统符号链接权限时，测试中的符号链接子检查无法执行；路径穿越拒绝仍会验证。
-- Windows 原生 `java.exe` 按系统 ANSI 代码页转换命令行，因此不保证支持代码页之外的字符参数。英文 Windows CI 实测把中文 JAR 文件名转换为 `??` 后报找不到文件；这发生在 ForBrick 执行之前。发行 JAR 使用 ASCII 文件名，测试分别验证空格、中文目录及 ASCII 相对路径。实现依据见 [OpenJDK 原生启动入口](https://github.com/openjdk/jdk/blob/master/src/java.base/share/native/launcher/main.c)。
+- Windows 原生 `java.exe` 按系统 ANSI 代码页转换命令行，因此不保证支持代码页之外的字符参数。英文 Windows CI 实测把中文 JAR 文件名转换为 `??` 后报找不到文件；这发生在 ForBrick 执行之前。Java 17 / 21 / 25 的原生 instrumentation 对中文工作目录中的相对 agent 路径还会产生 `AddToSystemClassLoaderSearch` 错误。发行文件名使用 ASCII；普通 `-jar` 验证中文工作目录加相对路径，手动 agent 验证目录外的 ASCII 绝对路径。实现依据见 [OpenJDK 原生启动入口](https://github.com/openjdk/jdk/blob/master/src/java.base/share/native/launcher/main.c)。

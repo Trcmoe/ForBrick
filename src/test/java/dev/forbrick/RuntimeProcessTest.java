@@ -71,13 +71,15 @@ public class RuntimeProcessTest {
         assertFalse(result.output.contains("Exception"));
     }
 
-    @Test public void unicodeWorkingDirectorySupportsRelativeRuntimePaths() throws Exception {
+    @Test public void unicodeWorkingDirectorySupportsMainAndAbsoluteAgentPaths() throws Exception {
         Path directory = Files.createDirectory(temp.getRoot().toPath().resolve("砖块 Minecraft"));
         Files.write(directory.resolve("runtime with spaces.jar"), InstallerService.runtimeJar());
         Result standalone = javaAt(directory, "-jar", "runtime with spaces.jar");
         assertEquals("Child JVM output: " + standalone.output, 0, standalone.exit);
         assertEquals("", standalone.output);
-        Result agent = javaAt(directory, "-javaagent:runtime with spaces.jar", "-cp",
+        // Modern Windows instrumentation also canonicalizes relative agent paths using ACP.
+        // Keep the optional agent outside that directory and pass its absolute ASCII path.
+        Result agent = javaAt(directory, "-javaagent:" + runtime().toAbsolutePath(), "-cp",
                 System.getProperty("java.class.path"), GameMain.class.getName());
         assertEquals("Child JVM output: " + agent.output, 0, agent.exit);
         assertEquals("", agent.output);
