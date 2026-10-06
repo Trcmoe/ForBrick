@@ -1,0 +1,46 @@
+name: Build and verify
+on:
+  push:
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: ${{ matrix.os }} / Java ${{ matrix.java }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        java: ['8', '17', '21', '25']
+        exclude:
+          # Hosted macOS is ARM; Temurin 8 has no native macOS ARM distribution.
+          - os: macos-latest
+            java: '8'
+        include:
+          - os: macos-15-intel
+            java: '8'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+      - run: mvn -B -ntp verify
+      - name: Exercise the real desktop UI
+        if: matrix.os == 'ubuntu-latest' && matrix.java == '17'
+        run: xvfb-run -a java -Djava.awt.headless=false -cp "target/test-classes:target/forbrick-installer-1.0.0.jar" dev.forbrick.UiSmoke target/ui-preview
+      - name: Export dependency-free runtime
+        run: java -jar target/forbrick-installer-1.0.0.jar export-runtime --output target/forbrick-runtime-1.0.0.jar
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest' && matrix.java == '17'
+        with:
+          name: ForBrick-1.0.0
+          path: |
+            target/forbrick-installer-1.0.0.jar
+            target/forbrick-runtime-1.0.0.jar
+          if-no-files-found: error

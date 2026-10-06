@@ -1,0 +1,10 @@
+ForBrick installer bundles Gson 2.13.2 (https://github.com/google/gson),
+Copyright Google Inc., licensed under the Apache License, Version 2.0.
+It also bundles Error Prone annotations 2.41.0, Copyright Google Inc.,
+under the same Apache-2.0 license (https://github.com/google/error-prone).
+Full license text is included as META-INF/LICENSE-APACHE-2.0.txt.
+The standalone ForBrick runtime contains no third-party classes.
+
+Installer layout is independently implemented and inspired by the familiar
+Fabric installer workflow. No Fabric branding, artwork or implementation is
+included. ForBrick is not affiliated with FabricMC, Mojang or Microsoft.
