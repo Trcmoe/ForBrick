@@ -24,6 +24,8 @@
 
 [Build and verify](https://github.com/Trcmoe/ForBrick/actions/workflows/ci.yml) 配置了 Windows / Linux / macOS 与 Java 8 / 17 / 21 / 25 的 12 个组合。macOS Java 8 使用 Intel，其他 macOS 组合使用 ARM。每个组合都执行全套核心与独立 JVM 测试；Linux Java 17 还运行 Swing 界面测试。具体执行状态以 Actions 页面为准。
 
+本次发行的 [最终 CI 运行 #37393881102](https://github.com/Trcmoe/ForBrick/actions/runs/37393881102) **12 / 12 组合全部通过**，每个组合执行 22 项测试；Linux 的真实 Swing 冒烟测试也通过。本地 Windows JDK 25 与 Linux CI JDK 17 导出的运行库 SHA-256 一致：`244068776d1f2a231dcee81845a17d0327fca3ce79f076e4c7a0a7ecd0cdbb63`。
+
 ## 复现
 
 ```sh
