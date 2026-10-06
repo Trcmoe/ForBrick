@@ -29,7 +29,7 @@ public class RuntimeProcessTest {
     @Test public void standaloneRuntimeExitsWithoutAnyOutput() throws Exception {
         Path jar = runtime();
         Result result = java("-jar", jar.toString(), "--username", "ignored");
-        assertEquals(0, result.exit);
+        assertEquals("Child JVM output: " + result.output, 0, result.exit);
         assertEquals("", result.output);
     }
 
@@ -38,7 +38,7 @@ public class RuntimeProcessTest {
         assertEquals(0, baseline.exit);
         assertEquals("GAME_MAIN_RAN", baseline.output);
         Result bricked = java("-javaagent:" + runtime(), "-cp", System.getProperty("java.class.path"), GameMain.class.getName());
-        assertEquals(0, bricked.exit);
+        assertEquals("Child JVM output: " + bricked.output, 0, bricked.exit);
         assertEquals("", bricked.output);
     }
 
