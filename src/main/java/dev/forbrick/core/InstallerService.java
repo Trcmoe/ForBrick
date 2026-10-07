@@ -7,6 +7,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.forbrick.runtime.Brick;
+import dev.forbrick.runtime.BrickNotice;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -39,9 +40,13 @@ import java.util.jar.JarOutputStream;
 /** Installs a reversible, per-version launcher main class replacement. */
 public final class InstallerService {
     private static final String MAIN = "dev.forbrick.runtime.Brick";
-    private static final String COORDINATE = "dev.forbrick:runtime:1.0.0";
-    private static final String LIBRARY_RELATIVE = "dev/forbrick/runtime/1.0.0/runtime-1.0.0.jar";
-    private static final String DOWNLOAD_URL = "https://github.com/Trcmoe/ForBrick/releases/download/v1.0.0/forbrick-runtime-1.0.0.jar";
+    private static final String COORDINATE = "dev.forbrick:runtime:1.0.1";
+    private static final String LIBRARY_RELATIVE = "dev/forbrick/runtime/1.0.1/runtime-1.0.1.jar";
+    private static final String DOWNLOAD_URL = "https://github.com/Trcmoe/ForBrick/releases/download/v1.0.1/forbrick-runtime-1.0.1.jar";
+    private static final String LEGACY_COORDINATE = "dev.forbrick:runtime:1.0.0";
+    private static final String LEGACY_LIBRARY_RELATIVE = "dev/forbrick/runtime/1.0.0/runtime-1.0.0.jar";
+    private static final String LEGACY_DOWNLOAD_URL = "https://github.com/Trcmoe/ForBrick/releases/download/v1.0.0/forbrick-runtime-1.0.0.jar";
+    private static final String LEGACY_JAR_SHA256 = "244068776d1f2a231dcee81845a17d0327fca3ce79f076e4c7a0a7ecd0cdbb63";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     // One fixed loopback endpoint serializes every ForBrick process without leaving lock files.
     // Never accept or connect: the bound socket is only an OS-owned mutex and sends no data.
@@ -110,9 +115,27 @@ public final class InstallerService {
                     if (same(original, old.original)) {
                         Files.delete(statePath(id)); // interrupted before the version was changed
                     } else {
-                        requireOwned(parseProfile(original, json), id);
+                        JsonObject profile = parseProfile(original, json);
+                        boolean legacy = requireOwned(profile, id);
                         ensureRuntime(); // repair a missing local library on a repeated install
-                        return null; // already installed; retain any unrelated edits
+                        if (!legacy) return null;
+                        JsonObject changed = profile.deepCopy();
+                        JsonArray libs = libraries(changed, false);
+                        for (int i = 0; i < libs.size(); i++) {
+                            if (isLegacyLibrary(libs.get(i))) {
+                                libs.set(i, libraryEntry());
+                                break;
+                            }
+                        }
+                        byte[] applied = jsonBytes(changed);
+                        // Record the new checksum before changing the profile only when the
+                        // legacy profile was pristine. Otherwise uninstall must merge edits.
+                        String upgradedHash = hash("SHA-256", original).equals(old.appliedHash)
+                                ? hash("SHA-256", applied) : null;
+                        writeAtomic(statePath(id), stateBytes(new State(id, old.original, old.appliedHash,
+                                upgradedHash)));
+                        writeAtomic(json, applied);
+                        return null;
                     }
                 }
                 JsonObject profile = parseProfile(original, json);
@@ -189,18 +212,24 @@ public final class InstallerService {
             jar.putNextEntry(manifest);
             jar.write(("Manifest-Version: 1.0\r\nMain-Class: " + MAIN + "\r\nPremain-Class: " + MAIN + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
             jar.closeEntry();
-            JarEntry clazz = new JarEntry("dev/forbrick/runtime/Brick.class");
-            clazz.setTime(0L);
-            jar.putNextEntry(clazz);
-            try (InputStream in = Brick.class.getResourceAsStream("Brick.class")) {
-                if (in == null) throw new IOException("Packaged Brick.class resource is missing");
-                byte[] buffer = new byte[4096];
-                int count;
-                while ((count = in.read(buffer)) != -1) jar.write(buffer, 0, count);
-            }
-            jar.closeEntry();
+            addRuntimeClass(jar, Brick.class);
+            addRuntimeClass(jar, BrickNotice.class);
         }
         return out.toByteArray();
+    }
+
+    private static void addRuntimeClass(JarOutputStream jar, Class<?> type) throws IOException {
+        String name = type.getName().replace('.', '/') + ".class";
+        JarEntry clazz = new JarEntry(name);
+        clazz.setTime(0L);
+        jar.putNextEntry(clazz);
+        try (InputStream in = type.getResourceAsStream(type.getSimpleName() + ".class")) {
+            if (in == null) throw new IOException("Packaged " + name + " resource is missing");
+            byte[] buffer = new byte[4096];
+            int count;
+            while ((count = in.read(buffer)) != -1) jar.write(buffer, 0, count);
+        }
+        jar.closeEntry();
     }
 
     private void uninstallInsideLock(String id) throws IOException {
@@ -221,7 +250,8 @@ public final class InstallerService {
         JsonObject profile = parseProfile(current, json);
         requireOwned(profile, id);
         byte[] restored;
-        if (hash("SHA-256", current).equals(state.appliedHash)) {
+        String currentHash = hash("SHA-256", current);
+        if (currentHash.equals(state.appliedHash) || currentHash.equals(state.upgradedHash)) {
             restored = state.original; // exact bytes, whitespace and ordering included
         } else {
             JsonObject original = parseProfile(state.original, statePath(id));
@@ -230,7 +260,7 @@ public final class InstallerService {
             else merged.remove("mainClass");
             JsonArray libs = libraries(merged, false);
             for (int i = 0; i < libs.size(); i++) {
-                if (isOurLibrary(libs.get(i))) { libs.remove(i); break; }
+                if (isOurLibrary(libs.get(i)) || isLegacyLibrary(libs.get(i))) { libs.remove(i); break; }
             }
             if (!original.has("libraries") && libs.size() == 0) merged.remove("libraries");
             restored = jsonBytes(merged);
@@ -239,33 +269,63 @@ public final class InstallerService {
         Files.delete(statePath(id));
     }
 
-    private void requireOwned(JsonObject profile, String id) throws IOException {
+    /** Returns whether this profile still references the exact 1.0.0 library entry. */
+    private boolean requireOwned(JsonObject profile, String id) throws IOException {
         if (!MAIN.equals(mainClass(profile)))
             throw new IOException("Version " + id + " mainClass changed since installation; recovery record retained");
         JsonArray libs = libraries(profile, false);
         int found = 0;
-        for (JsonElement e : libs) if (isOurLibrary(e)) found++;
+        boolean legacy = false;
+        for (JsonElement e : libs) {
+            if (isOurLibrary(e)) found++;
+            else if (isLegacyLibrary(e)) { found++; legacy = true; }
+        }
         if (found != 1 || countCoordinate(profile) != 1)
             throw new IOException("Version " + id + " ForBrick library changed since installation; recovery record retained");
+        return legacy;
     }
 
     private JsonObject libraryEntry() throws IOException {
-        byte[] jar = runtimeJar();
+        return libraryEntry(COORDINATE, LIBRARY_RELATIVE, DOWNLOAD_URL, runtimeJar());
+    }
+
+    private JsonObject legacyLibraryEntry() throws IOException {
+        return libraryEntry(LEGACY_COORDINATE, LEGACY_LIBRARY_RELATIVE, LEGACY_DOWNLOAD_URL, legacyRuntimeJar());
+    }
+
+    private static JsonObject libraryEntry(String coordinate, String path, String url, byte[] jar) {
         JsonObject artifact = new JsonObject();
-        artifact.addProperty("path", LIBRARY_RELATIVE);
-        artifact.addProperty("url", DOWNLOAD_URL);
+        artifact.addProperty("path", path);
+        artifact.addProperty("url", url);
         artifact.addProperty("sha1", hash("SHA-1", jar));
         artifact.addProperty("size", jar.length);
         JsonObject downloads = new JsonObject();
         downloads.add("artifact", artifact);
         JsonObject library = new JsonObject();
-        library.addProperty("name", COORDINATE);
+        library.addProperty("name", coordinate);
         library.add("downloads", downloads);
         return library;
     }
 
     private boolean isOurLibrary(JsonElement entry) throws IOException {
         return entry.isJsonObject() && libraryEntry().equals(entry.getAsJsonObject());
+    }
+    private boolean isLegacyLibrary(JsonElement entry) throws IOException {
+        return entry.isJsonObject() && legacyLibraryEntry().equals(entry.getAsJsonObject());
+    }
+
+    private static byte[] legacyRuntimeJar() throws IOException {
+        try (InputStream in = InstallerService.class.getResourceAsStream("/dev/forbrick/runtime/forbrick-runtime-1.0.0.jar")) {
+            if (in == null) throw new IOException("Packaged legacy runtime resource is missing");
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[4096];
+            int count;
+            while ((count = in.read(buffer)) != -1) out.write(buffer, 0, count);
+            byte[] jar = out.toByteArray();
+            if (!LEGACY_JAR_SHA256.equals(hash("SHA-256", jar)))
+                throw new IOException("Packaged legacy runtime failed integrity check");
+            return jar;
+        }
     }
 
     private boolean containsCoordinate(JsonObject profile) throws IOException { return countCoordinate(profile) != 0; }
@@ -274,7 +334,8 @@ public final class InstallerService {
         for (JsonElement item : libraries(profile, false)) {
             if (item.isJsonObject()) {
                 JsonElement name = item.getAsJsonObject().get("name");
-                if (name != null && name.isJsonPrimitive() && COORDINATE.equals(name.getAsString())) found++;
+                if (name != null && name.isJsonPrimitive()
+                        && (COORDINATE.equals(name.getAsString()) || LEGACY_COORDINATE.equals(name.getAsString()))) found++;
             }
         }
         return found;
@@ -283,7 +344,7 @@ public final class InstallerService {
     private void ensureRuntime() throws IOException {
         byte[] expected = runtimeJar();
         Path jar = checked(root.resolve("libraries").resolve(LIBRARY_RELATIVE));
-        Path marker = checked(root.resolve(".forbrick").resolve("runtime-owned.sha256"));
+        Path marker = checked(root.resolve(".forbrick").resolve("runtime-owned-1.0.1.sha256"));
         if (Files.exists(marker, LinkOption.NOFOLLOW_LINKS)) {
             String ownedHash = new String(Files.readAllBytes(marker), StandardCharsets.US_ASCII).trim();
             if (!ownedHash.equals(hash("SHA-256", expected))) throw new IOException("ForBrick runtime ownership marker is unexpected");
@@ -305,18 +366,26 @@ public final class InstallerService {
         List<String> unknown = unmanagedHooks();
         if (!unknown.isEmpty()) throw new IOException("Unmanaged ForBrick settings remain in versions " + unknown
                 + "; runtime retained because their original settings are unknown");
-        Path marker = checked(root.resolve(".forbrick").resolve("runtime-owned.sha256"));
-        if (!Files.exists(marker, LinkOption.NOFOLLOW_LINKS)) return;
-        byte[] expected = runtimeJar();
+        Path currentMarker = checked(root.resolve(".forbrick").resolve("runtime-owned-1.0.1.sha256"));
+        Path legacyMarker = checked(root.resolve(".forbrick").resolve("runtime-owned.sha256"));
+        Path currentJar = checked(root.resolve("libraries").resolve(LIBRARY_RELATIVE));
+        Path legacyJar = checked(root.resolve("libraries").resolve(LEGACY_LIBRARY_RELATIVE));
+        // Validate both libraries before deleting either: mixed installs may need both.
+        boolean currentOwned = validateRuntimeOwnership(currentMarker, currentJar, runtimeJar());
+        boolean legacyOwned = validateRuntimeOwnership(legacyMarker, legacyJar, legacyRuntimeJar());
+        if (currentOwned) { Files.deleteIfExists(currentJar); Files.delete(currentMarker); }
+        if (legacyOwned) { Files.deleteIfExists(legacyJar); Files.delete(legacyMarker); }
+        if (currentOwned) pruneEmpty(currentJar.getParent(), root.resolve("libraries"));
+        if (legacyOwned) pruneEmpty(legacyJar.getParent(), root.resolve("libraries"));
+    }
+
+    private boolean validateRuntimeOwnership(Path marker, Path jar, byte[] expected) throws IOException {
+        if (!Files.exists(marker, LinkOption.NOFOLLOW_LINKS)) return false;
         String ownedHash = new String(Files.readAllBytes(marker), StandardCharsets.US_ASCII).trim();
         if (!ownedHash.equals(hash("SHA-256", expected))) throw new IOException("ForBrick runtime ownership marker is unexpected");
-        Path jar = checked(root.resolve("libraries").resolve(LIBRARY_RELATIVE));
-        if (Files.exists(jar, LinkOption.NOFOLLOW_LINKS)) {
-            if (!same(Files.readAllBytes(jar), expected)) throw new IOException("Runtime library was changed; it was not removed: " + jar);
-            Files.delete(jar);
-        }
-        Files.delete(marker);
-        pruneEmpty(jar.getParent(), root.resolve("libraries"));
+        if (Files.exists(jar, LinkOption.NOFOLLOW_LINKS) && !same(Files.readAllBytes(jar), expected))
+            throw new IOException("Runtime library was changed; it was not removed: " + jar);
+        return true;
     }
 
     private List<Path> stagedFiles() throws IOException {
@@ -324,6 +393,7 @@ public final class InstallerService {
         collectStaged(root.resolve(".forbrick"), files);
         collectStaged(root.resolve(".forbrick").resolve("versions"), files);
         collectStaged(root.resolve("libraries").resolve("dev/forbrick/runtime/1.0.0"), files);
+        collectStaged(root.resolve("libraries").resolve("dev/forbrick/runtime/1.0.1"), files);
         Path versions = checked(root.resolve("versions"));
         if (Files.isDirectory(versions, LinkOption.NOFOLLOW_LINKS)) {
             try (DirectoryStream<Path> dirs = Files.newDirectoryStream(versions)) {
@@ -364,7 +434,7 @@ public final class InstallerService {
                     if (MAIN.equals(mainClass(profile)) || containsCoordinate(profile)) unknown.add(id);
                 } catch (IOException malformed) {
                     String raw = new String(bytes, StandardCharsets.UTF_8);
-                    if (raw.contains(MAIN) || raw.contains(COORDINATE)) unknown.add(id + " (malformed JSON)");
+                    if (raw.contains(MAIN) || raw.contains(COORDINATE) || raw.contains(LEGACY_COORDINATE)) unknown.add(id + " (malformed JSON)");
                 }
             }
         }
@@ -420,8 +490,14 @@ public final class InstallerService {
             throw new IOException("Recovery record failed integrity check: " + path);
         String applied = requiredString(data, "appliedSha256", path);
         if (!applied.matches("[0-9a-f]{64}")) throw new IOException("Recovery record has invalid applied checksum: " + path);
+        String upgraded = null;
+        if (data.has("upgradedSha256")) {
+            upgraded = requiredString(data, "upgradedSha256", path);
+            if (!upgraded.matches("[0-9a-f]{64}"))
+                throw new IOException("Recovery record has invalid upgraded checksum: " + path);
+        }
         parseProfile(original, path); // ensure restore source remains usable
-        return new State(id, original, applied);
+        return new State(id, original, applied, upgraded);
     }
 
     private byte[] stateBytes(State state) {
@@ -430,6 +506,7 @@ public final class InstallerService {
         data.addProperty("originalBase64", Base64.getEncoder().encodeToString(state.original));
         data.addProperty("originalSha256", hash("SHA-256", state.original));
         data.addProperty("appliedSha256", state.appliedHash);
+        if (state.upgradedHash != null) data.addProperty("upgradedSha256", state.upgradedHash);
         return jsonBytes(data);
     }
 
@@ -597,6 +674,10 @@ public final class InstallerService {
         final String id;
         final byte[] original;
         final String appliedHash;
-        State(String id, byte[] original, String appliedHash) { this.id = id; this.original = original; this.appliedHash = appliedHash; }
+        final String upgradedHash;
+        State(String id, byte[] original, String appliedHash) { this(id, original, appliedHash, null); }
+        State(String id, byte[] original, String appliedHash, String upgradedHash) {
+            this.id = id; this.original = original; this.appliedHash = appliedHash; this.upgradedHash = upgradedHash;
+        }
     }
 }

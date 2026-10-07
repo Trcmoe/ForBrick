@@ -2,19 +2,21 @@
 
 **加载成功，游戏结束。**
 
-ForBrick 是一款可卸载的 Minecraft Java 版娱乐加载器。给选中的本地版本安装后，游戏 JVM 会在进入游戏前以 **退出码 0** 静默结束。没有错误弹窗，没有 ForBrick 日志，也没有主菜单。
+ForBrick 是一款可卸载的 Minecraft Java 版娱乐加载器。给选中的本地版本安装后，游戏 JVM 会在进入游戏前以 **退出码 0** 结束。随后显示信息框，说明实例因 ForBrick “变砖”，并提供下载安装器和卸载 ForBrick 的指引。
 
 安装器采用类似 Fabric Installer 的紧凑桌面布局，提供中文 / English、版本选择，以及独立的卸载页。它不是 FabricMC、Mojang 或 Microsoft 的产品。
 
 ![ForBrick 安装器](docs/installer-zh.png)
 
+**1.0.1：**修复展开语言菜单后选择 English 导致界面卡住的问题。切换语言保留路径、当前页签和版本选择。新增退出后的卸载提示框，自动按系统显示语言选择中文或英文；其他语言使用英文。新安装器仍能卸载 1.0.0 的安装；对旧实例再次点击“安装 ForBrick”可升级运行库并获得提示框。
+
 ## 使用
 
-1. 在 [Releases](https://github.com/Trcmoe/ForBrick/releases) 下载 `forbrick-installer-1.0.0.jar`。
+1. 在 [Releases](https://github.com/Trcmoe/ForBrick/releases) 下载 `forbrick-installer-1.0.1.jar`。
 2. 安装 **Java 8 或更新版本**。双击 JAR，或运行：
 
    ```sh
-   java -jar forbrick-installer-1.0.0.jar
+   java -jar forbrick-installer-1.0.1.jar
    ```
 
 3. 关闭 Minecraft 和启动器，选择含有 `versions` 文件夹的 Minecraft 目录。
@@ -37,7 +39,9 @@ ForBrick 是一款可卸载的 Minecraft Java 版娱乐加载器。给选中的�
 
 “绝大多数版本”来自启动机制与游戏代码解耦，不表示逐一实测了所有 Minecraft 版本或第三方启动器。启动器必须保留并使用本地版本 JSON 的入口与库配置。在线修复、重新安装加载器或元数据刷新可能覆盖 ForBrick；重新安装前先卸载已有记录。
 
-**静默范围：**ForBrick 不产生标准输出、标准错误或崩溃报告，退出码为 0。启动器可以自行显示“游戏已结束”或其他提示；外部 JVM 参数、其他 Java agents、缺失依赖和启动器预检查也可能在 ForBrick 执行前产生输出。已有游戏资源应先正常安装完成。
+**退出和提示：**游戏退出码为 0，ForBrick 不向游戏写入标准输出、标准错误或崩溃报告。独立的 Java 辅助进程等待游戏退出后显示信息框；关闭信息框后辅助进程结束，不写入文件。提示框使用系统语言，独立于安装器的语言选择。“打开下载页面”前往 [最新 Release](https://github.com/Trcmoe/ForBrick/releases/latest)，地址也可以直接复制。无桌面环境、明确设置 `-Djava.awt.headless=true` 或无法创建辅助进程时只退出游戏；强制结束整个进程树的启动器可能阻止信息框显示。
+
+启动器可以自行显示“游戏已结束”或其他提示；外部 JVM 参数、其他 Java agents、缺失依赖和启动器预检查也可能在 ForBrick 执行前产生输出。已有游戏资源应先正常安装完成。
 
 仓库是私有时，下载发行附件需要 GitHub 授权。安装器直接写入内置运行库，正常安装不需要联网；如果启动器强制重新下载运行库，私有 Release 地址无法被它匿名访问，应使用安装器修复本地安装或下面的手动 agent 方式。
 
@@ -56,10 +60,10 @@ ForBrick 是一款可卸载的 Minecraft Java 版娱乐加载器。给选中的�
 ## 命令行
 
 ```sh
-java -jar forbrick-installer-1.0.0.jar list --minecraft "/path/to/.minecraft"
-java -jar forbrick-installer-1.0.0.jar install --minecraft "/path/to/.minecraft" --version "1.21.1"
-java -jar forbrick-installer-1.0.0.jar uninstall --minecraft "/path/to/.minecraft" --version "1.21.1"
-java -jar forbrick-installer-1.0.0.jar uninstall-all --minecraft "/path/to/.minecraft"
+java -jar forbrick-installer-1.0.1.jar list --minecraft "/path/to/.minecraft"
+java -jar forbrick-installer-1.0.1.jar install --minecraft "/path/to/.minecraft" --version "1.21.1"
+java -jar forbrick-installer-1.0.1.jar uninstall --minecraft "/path/to/.minecraft" --version "1.21.1"
+java -jar forbrick-installer-1.0.1.jar uninstall-all --minecraft "/path/to/.minecraft"
 ```
 
 省略 `--minecraft` 时使用系统默认 Minecraft 目录。`--version` 取文件夹中的本地版本 ID，可以是已经装过其他加载器的 ID。`--help` 显示帮助；操作成功返回 0，文件操作失败返回 1，参数错误返回 2。
@@ -69,7 +73,7 @@ java -jar forbrick-installer-1.0.0.jar uninstall-all --minecraft "/path/to/.mine
 对于不使用标准版本 JSON 的启动器，可以导出仅含运行类的 JAR：
 
 ```sh
-java -jar forbrick-installer-1.0.0.jar export-runtime --output "/path/to/forbrick-runtime.jar"
+java -jar forbrick-installer-1.0.1.jar export-runtime --output "/path/to/forbrick-runtime.jar"
 ```
 
 在**指定游戏实例**的 JVM 参数中添加一个参数：
@@ -90,10 +94,10 @@ Windows 的 Java 原生命令行会按系统代码页转换参数。如果完整
 
 ```sh
 mvn -B verify
-java -jar target/forbrick-installer-1.0.0.jar export-runtime --output target/forbrick-runtime-1.0.0.jar
+java -jar target/forbrick-installer-1.0.1.jar export-runtime --output target/forbrick-runtime-1.0.1.jar
 ```
 
-CI 在 Windows、Linux、macOS 上运行安装与卸载测试，以及独立 JVM 的静默退出测试。Java 8、17、21、25 均配置验证；macOS 的 Java 8 使用 Intel runner，较新 Java 使用 ARM runner。测试覆盖精确恢复、共享运行库、配置冲突、路径保护、重复操作和带空格 / 中文的运行路径。Linux Java 17 还会在虚拟显示器中执行真实 Swing 界面的安装 / 卸载冒烟测试。
+CI 在 Windows、Linux、macOS 上运行安装与卸载测试，以及独立 JVM 的退出测试。Java 8、17、21、25 均配置验证；macOS 的 Java 8 使用 Intel runner，较新 Java 使用 ARM runner。测试覆盖精确恢复、旧版升级、共享运行库、配置冲突、路径保护、重复操作和带空格 / 中文的运行路径。Windows Java 17 和 Linux Java 17 还执行真实 Swing 语言切换、安装 / 卸载及中英文提示框冒烟测试；Linux 使用虚拟显示器。
 
 更多验证记录见 [验证说明](docs/verification.md)。代码采用 MIT 许可，安装器包含 Apache-2.0 许可的 Gson；独立运行库没有第三方依赖。
 

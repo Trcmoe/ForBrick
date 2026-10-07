@@ -10,15 +10,15 @@ import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.DefaultComboBoxModel;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -55,6 +55,8 @@ public final class InstallerWindow extends JFrame {
     private boolean updatingPathField;
     private JTabbedPane tabs;
     private final List<VersionInfo> versions = new ArrayList<VersionInfo>();
+    private final List<Runnable> translations = new ArrayList<Runnable>();
+    private Supplier<String> statusMessage;
     private boolean busy;
 
     public InstallerWindow() {
@@ -87,7 +89,7 @@ public final class InstallerWindow extends JFrame {
         JLabel title = new JLabel("ForBrick");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 25f));
         title.setForeground(INK);
-        JLabel subtitle = new JLabel(tr("Minecraft 娱乐加载器 · 1.0.0", "Minecraft joke loader · 1.0.0"));
+        JLabel subtitle = translatedLabel("Minecraft 娱乐加载器 · 1.0.1", "Minecraft joke loader · 1.0.1", false);
         subtitle.setFont(subtitle.getFont().deriveFont(12f));
         subtitle.setForeground(MUTED);
         brand.add(title, BorderLayout.CENTER);
@@ -97,14 +99,7 @@ public final class InstallerWindow extends JFrame {
         language.setOpaque(false);
         localeSelector = new JComboBox<String>(new String[] {"中文", "English"});
         localeSelector.setSelectedIndex(chinese ? 0 : 1);
-        localeSelector.addActionListener(new ActionListener() {
-            @Override public void actionPerformed(ActionEvent e) {
-                if (InstallerWindow.this.isDisplayable()) {
-                    chinese = localeSelector.getSelectedIndex() == 0;
-                    rebuildContent();
-                }
-            }
-        });
+        localeSelector.addActionListener(e -> applyLanguage(((JComboBox<?>) e.getSource()).getSelectedIndex() == 0));
         language.add(localeSelector);
         header.add(language, BorderLayout.EAST);
         page.add(header, BorderLayout.NORTH);
@@ -113,7 +108,7 @@ public final class InstallerWindow extends JFrame {
         center.setOpaque(false);
         JPanel pathCard = card();
         pathCard.setLayout(new BorderLayout(9, 6));
-        JLabel pathLabel = label(tr("Minecraft 文件夹", "Minecraft folder"), true);
+        JLabel pathLabel = translatedLabel("Minecraft 文件夹", "Minecraft folder", true);
         pathCard.add(pathLabel, BorderLayout.NORTH);
         JPanel pathRow = new JPanel(new BorderLayout(7, 0));
         pathRow.setOpaque(false);
@@ -128,8 +123,8 @@ public final class InstallerWindow extends JFrame {
         pathRow.add(pathField, BorderLayout.CENTER);
         JPanel pathActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         pathActions.setOpaque(false);
-        browseButton = new JButton(tr("浏览…", "Browse…"));
-        refreshButton = new JButton(tr("刷新", "Refresh"));
+        browseButton = translatedButton("浏览…", "Browse…", false);
+        refreshButton = translatedButton("刷新", "Refresh", false);
         browseButton.addActionListener(e -> chooseDirectory());
         refreshButton.addActionListener(e -> applyPath());
         pathActions.add(browseButton);
@@ -147,10 +142,11 @@ public final class InstallerWindow extends JFrame {
 
         JPanel footer = new JPanel(new BorderLayout(8, 6));
         footer.setOpaque(false);
-        status = label(tr("就绪", "Ready"), false);
+        status = label("", false);
+        setStatus(() -> tr("就绪", "Ready"));
         footer.add(status, BorderLayout.NORTH);
-        JLabel safety = label(tr("所选版本启动后将静默退出（退出码 0）。请先关闭 Minecraft 和启动器。娱乐项目。",
-                "The selected version exits silently on launch (exit code 0). Close Minecraft and the launcher first. For fun."), false);
+        JLabel safety = translatedLabel("所选版本启动后退出并显示卸载提示。安装前请关闭 Minecraft 和启动器。",
+                "Launch exits the game and shows removal instructions. Close the game and launcher before installing.", false);
         safety.setForeground(MUTED);
         footer.add(safety, BorderLayout.CENTER);
         page.add(footer, BorderLayout.SOUTH);
@@ -161,17 +157,17 @@ public final class InstallerWindow extends JFrame {
         JPanel body = new JPanel(new BorderLayout(0, 14));
         body.setOpaque(false);
         body.setBorder(new EmptyBorder(16, 2, 4, 2));
-        JLabel explanation = label(tr("选择一个本地版本安装 ForBrick。已安装版本会标记显示。", "Choose a local version to install ForBrick. Installed versions are marked."), false);
+        JLabel explanation = translatedLabel("选择一个本地版本安装 ForBrick。已安装版本会标记显示。", "Choose a local version to install ForBrick. Installed versions are marked.", false);
         body.add(explanation, BorderLayout.NORTH);
         JPanel selection = card();
         selection.setLayout(new BorderLayout(8, 8));
-        selection.add(label(tr("本地版本", "Local versions"), true), BorderLayout.NORTH);
+        selection.add(translatedLabel("本地版本", "Local versions", true), BorderLayout.NORTH);
         versionBox = new JComboBox<String>();
         versionBox.setFont(versionBox.getFont().deriveFont(14f));
         selection.add(versionBox, BorderLayout.CENTER);
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
         buttons.setOpaque(false);
-        installButton = primaryButton(tr("安装 ForBrick", "Install ForBrick"));
+        installButton = translatedButton("安装 ForBrick", "Install ForBrick", true);
         installButton.addActionListener(e -> installSelected());
         buttons.add(installButton);
         selection.add(buttons, BorderLayout.SOUTH);
@@ -183,19 +179,19 @@ public final class InstallerWindow extends JFrame {
         JPanel body = new JPanel(new BorderLayout(0, 14));
         body.setOpaque(false);
         body.setBorder(new EmptyBorder(16, 2, 4, 2));
-        body.add(label(tr("仅显示由 ForBrick 管理的版本。卸载会清理 ForBrick 文件和对应版本入口。",
-                "Only versions managed by ForBrick are shown. Uninstall removes its files and version entry."), false), BorderLayout.NORTH);
+        body.add(translatedLabel("仅显示由 ForBrick 管理的版本。卸载会清理 ForBrick 文件和对应版本入口。",
+                "Only versions managed by ForBrick are shown. Uninstall removes its files and version entry.", false), BorderLayout.NORTH);
         JPanel selection = card();
         selection.setLayout(new BorderLayout(8, 8));
-        selection.add(label(tr("已安装版本", "Installed versions"), true), BorderLayout.NORTH);
+        selection.add(translatedLabel("已安装版本", "Installed versions", true), BorderLayout.NORTH);
         installedBox = new JComboBox<String>();
         installedBox.setFont(installedBox.getFont().deriveFont(14f));
         selection.add(installedBox, BorderLayout.CENTER);
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 7, 0));
         actions.setOpaque(false);
-        uninstallButton = new JButton(tr("卸载所选", "Uninstall selected"));
+        uninstallButton = translatedButton("卸载所选", "Uninstall selected", false);
         uninstallButton.addActionListener(e -> uninstallSelected());
-        uninstallAllButton = new JButton(tr("一键卸载全部", "Uninstall all"));
+        uninstallAllButton = translatedButton("一键卸载全部", "Uninstall all", false);
         uninstallAllButton.addActionListener(e -> uninstallAll());
         actions.add(uninstallButton);
         actions.add(uninstallAllButton);
@@ -204,20 +200,18 @@ public final class InstallerWindow extends JFrame {
         return body;
     }
 
-    private void rebuildContent() {
-        int selected = tabs == null ? 0 : tabs.getSelectedIndex();
-        String pendingPath = pathField == null ? root.toString() : pathField.getText();
-        boolean pendingPathDirty = pathDirty;
-        setContentPane(buildContent());
-        if (selected >= 0 && selected < tabs.getTabCount()) tabs.setSelectedIndex(selected);
-        setPathField(pendingPath);
-        pathDirty = pendingPathDirty;
-        if (pathDirty) {
-            status.setText(html(tr("路径已更改；按 Enter 或点击刷新后再操作。", "Path changed; press Enter or click Refresh before continuing.")));
-            updateActionStates();
-        } else {
-            refreshVersions();
-        }
+    private void applyLanguage(boolean useChinese) {
+        if (chinese == useChinese) return;
+        String selectedId = selectedVersion() == null ? null : selectedVersion().id;
+        chinese = useChinese;
+        // A combo ActionEvent runs before its popup closes. Replacing the content pane
+        // here removes that live popup during Container.remove and corrupts Swing's state.
+        // Keep the component tree intact; localization requires no filesystem access.
+        for (Runnable translation : translations) translation.run();
+        tabs.setTitleAt(0, tr("安装", "Install"));
+        tabs.setTitleAt(1, tr("卸载", "Uninstall"));
+        populateVersions(selectedId);
+        status.setText(html(statusMessage.get()));
         revalidate();
         repaint();
     }
@@ -238,7 +232,7 @@ public final class InstallerWindow extends JFrame {
     private void pathEdited() {
         if (updatingPathField || pathField == null) return;
         pathDirty = !pathMatchesAppliedRoot();
-        if (pathDirty) status.setText(html(tr("路径已更改；按 Enter 或点击刷新后再操作。", "Path changed; press Enter or click Refresh before continuing.")));
+        if (pathDirty) setStatus(() -> tr("路径已更改；按 Enter 或点击刷新后再操作。", "Path changed; press Enter or click Refresh before continuing."));
         else showVersionCount();
         updateActionStates();
     }
@@ -264,14 +258,14 @@ public final class InstallerWindow extends JFrame {
             pathDirty = false;
             refreshVersions();
         } catch (RuntimeException ex) {
-            status.setText(html(tr("路径无效：" + ex.getMessage(), "Invalid path: " + ex.getMessage())));
+            setStatus(() -> tr("路径无效：" + ex.getMessage(), "Invalid path: " + ex.getMessage()));
         }
     }
 
     private void refreshVersions() {
         if (busy) return;
         setBusy(true);
-        status.setText(html(tr("正在读取本地版本…", "Reading local versions…")));
+        setStatus(() -> tr("正在读取本地版本…", "Reading local versions…"));
         new SwingWorker<List<VersionInfo>, Void>() {
             @Override protected List<VersionInfo> doInBackground() throws Exception { return service.listVersions(); }
             @Override protected void done() {
@@ -281,10 +275,7 @@ public final class InstallerWindow extends JFrame {
                     versions.clear();
                     versions.addAll(get());
                     populateVersions(selectedId);
-                    long managed = 0;
-                    for (VersionInfo v : versions) if (v.installed) managed++;
-                    status.setText(html(tr("找到 " + versions.size() + " 个本地版本 · " + managed + " 个 ForBrick 安装",
-                            versions.size() + " local versions found · " + managed + " ForBrick installations")));
+                    showVersionCount();
                 } catch (Exception ex) { showError(ex); }
                 finally { setBusy(false); }
             }
@@ -292,13 +283,17 @@ public final class InstallerWindow extends JFrame {
     }
 
     private void populateVersions(String priorId) {
-        versionBox.removeAllItems();
-        installedBox.removeAllItems();
+        Object installedId = installedBox.getSelectedItem();
+        DefaultComboBoxModel<String> available = new DefaultComboBoxModel<String>();
+        DefaultComboBoxModel<String> installed = new DefaultComboBoxModel<String>();
         for (VersionInfo v : versions) {
-            versionBox.addItem(v.id + (v.installed ? "  ·  " + tr("已安装", "Installed") : "  ·  " + tr("未安装", "Not installed")));
-            if (v.installed) installedBox.addItem(v.id);
+            available.addElement(v.id + (v.installed ? "  ·  " + tr("已安装", "Installed") : "  ·  " + tr("未安装", "Not installed")));
+            if (v.installed) installed.addElement(v.id);
         }
+        versionBox.setModel(available);
+        installedBox.setModel(installed);
         if (priorId != null) for (int i = 0; i < versions.size(); i++) if (versions.get(i).id.equals(priorId)) { versionBox.setSelectedIndex(i); break; }
+        if (installedId != null && installed.getIndexOf(installedId) >= 0) installedBox.setSelectedItem(installedId);
         updateActionStates();
     }
 
@@ -306,9 +301,9 @@ public final class InstallerWindow extends JFrame {
         if (!guardAppliedPath()) return;
         final VersionInfo chosen = selectedVersion();
         if (chosen == null) return;
-        runOperation(tr("正在安装 ForBrick…", "Installing ForBrick…"), new Task() {
+        runOperation(() -> tr("正在安装 ForBrick…", "Installing ForBrick…"), new Task() {
             @Override public void run() throws Exception { service.install(chosen.id); }
-            @Override public String success() { return tr("已安装到 " + chosen.id + "。启动该版本后将静默退出。", "Installed to " + chosen.id + ". It will exit silently when launched."); }
+            @Override public String success() { return tr("已安装到 " + chosen.id + "。启动后将退出并显示卸载提示。", "Installed to " + chosen.id + ". Launch will exit and show removal instructions."); }
         });
     }
 
@@ -316,7 +311,7 @@ public final class InstallerWindow extends JFrame {
         if (!guardAppliedPath()) return;
         final VersionInfo chosen = selectedInstalledVersion();
         if (chosen == null || !chosen.installed) return;
-        runOperation(tr("正在卸载 ForBrick…", "Uninstalling ForBrick…"), new Task() {
+        runOperation(() -> tr("正在卸载 ForBrick…", "Uninstalling ForBrick…"), new Task() {
             @Override public void run() throws Exception { service.uninstall(chosen.id); }
             @Override public String success() { return tr("已恢复 " + chosen.id + " 的原始启动设置。", "Restored the original launch settings for " + chosen.id + "."); }
         });
@@ -324,15 +319,15 @@ public final class InstallerWindow extends JFrame {
 
     private void uninstallAll() {
         if (!guardAppliedPath()) return;
-        runOperation(tr("正在卸载全部 ForBrick 安装…", "Uninstalling all ForBrick installations…"), new Task() {
+        runOperation(() -> tr("正在卸载全部 ForBrick 安装…", "Uninstalling all ForBrick installations…"), new Task() {
             @Override public void run() throws Exception { service.uninstallAll(); }
             @Override public String success() { return tr("已全部卸载，ForBrick 残留文件已清理。", "All installations removed; ForBrick files were cleaned up."); }
         });
     }
 
-    private void runOperation(final String progress, final Task task) {
+    private void runOperation(final Supplier<String> progress, final Task task) {
         setBusy(true);
-        status.setText(html(progress));
+        setStatus(progress);
         new SwingWorker<List<VersionInfo>, Void>() {
             @Override protected List<VersionInfo> doInBackground() throws Exception { task.run(); return service.listVersions(); }
             @Override protected void done() {
@@ -340,7 +335,7 @@ public final class InstallerWindow extends JFrame {
                     List<VersionInfo> latest = get();
                     String selectedId = selectedVersion() == null ? null : selectedVersion().id;
                     versions.clear(); versions.addAll(latest); populateVersions(selectedId);
-                    status.setText(html(task.success()));
+                    setStatus(task::success);
                 }
                 catch (Exception ex) { showError(ex); }
                 finally { setBusy(false); }
@@ -368,7 +363,7 @@ public final class InstallerWindow extends JFrame {
     private boolean guardAppliedPath() {
         if (!pathDirty && pathMatchesAppliedRoot()) return true;
         pathDirty = true;
-        status.setText(html(tr("路径已更改；按 Enter 或点击刷新后再操作。", "Path changed; press Enter or click Refresh before continuing.")));
+        setStatus(() -> tr("路径已更改；按 Enter 或点击刷新后再操作。", "Path changed; press Enter or click Refresh before continuing."));
         updateActionStates();
         return false;
     }
@@ -382,10 +377,12 @@ public final class InstallerWindow extends JFrame {
     }
 
     private void showVersionCount() {
-        long managed = 0;
-        for (VersionInfo v : versions) if (v.installed) managed++;
-        status.setText(html(tr("找到 " + versions.size() + " 个本地版本 · " + managed + " 个 ForBrick 安装",
-                versions.size() + " local versions found · " + managed + " ForBrick installations")));
+        setStatus(() -> {
+            long managed = 0;
+            for (VersionInfo v : versions) if (v.installed) managed++;
+            return tr("找到 " + versions.size() + " 个本地版本 · " + managed + " 个 ForBrick 安装",
+                    versions.size() + " local versions found · " + managed + " ForBrick installations");
+        });
     }
 
     private void setBusy(boolean value) {
@@ -405,7 +402,24 @@ public final class InstallerWindow extends JFrame {
         while (cause instanceof java.util.concurrent.ExecutionException && cause.getCause() != null)
             cause = cause.getCause();
         String message = cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage();
-        status.setText(html(tr("操作失败：" + message, "Operation failed: " + message)));
+        setStatus(() -> tr("操作失败：" + message, "Operation failed: " + message));
+    }
+
+    private void setStatus(Supplier<String> message) {
+        statusMessage = message;
+        status.setText(html(message.get()));
+    }
+
+    private JLabel translatedLabel(String zh, String en, boolean strong) {
+        JLabel label = label(tr(zh, en), strong);
+        translations.add(() -> label.setText(tr(zh, en)));
+        return label;
+    }
+
+    private JButton translatedButton(String zh, String en, boolean primary) {
+        JButton button = primary ? primaryButton(tr(zh, en)) : new JButton(tr(zh, en));
+        translations.add(() -> button.setText(tr(zh, en)));
+        return button;
     }
 
     private String html(String text) {

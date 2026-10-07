@@ -49,18 +49,19 @@ public class RuntimeProcessTest {
             assertEquals("dev.forbrick.runtime.Brick", jar.getManifest().getMainAttributes().getValue("Main-Class"));
             assertEquals("dev.forbrick.runtime.Brick", jar.getManifest().getMainAttributes().getValue("Premain-Class"));
             java.util.jar.JarEntry entry;
-            boolean found = false;
+            java.util.Set<String> found = new java.util.HashSet<String>();
             while ((entry = jar.getNextJarEntry()) != null) {
-                if (entry.getName().equals("dev/forbrick/runtime/Brick.class")) {
+                if (entry.getName().equals("dev/forbrick/runtime/Brick.class")
+                        || entry.getName().equals("dev/forbrick/runtime/BrickNotice.class")) {
                     byte[] header = new byte[8];
                     new java.io.DataInputStream(jar).readFully(header);
                     assertEquals(52, ((header[6] & 255) << 8) | (header[7] & 255));
-                    found = true;
+                    found.add(entry.getName());
                 } else {
                     assertTrue("Unexpected runtime dependency " + entry.getName(), entry.isDirectory());
                 }
             }
-            assertTrue(found);
+            assertEquals(2, found.size());
         }
     }
 
@@ -100,6 +101,7 @@ public class RuntimeProcessTest {
         List<String> command = new ArrayList<String>();
         String executable = System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT).contains("win") ? "java.exe" : "java";
         command.add(java.nio.file.Paths.get(System.getProperty("java.home"), "bin", executable).toString());
+        command.add("-Djava.awt.headless=true");
         command.addAll(Arrays.asList(arguments));
         ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
         if (directory != null) builder.directory(directory.toFile());

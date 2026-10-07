@@ -21,7 +21,7 @@ public final class CommandLine {
                 return 0;
             }
             if (args.length == 1 && args[0].equals("--version")) {
-                System.out.println("ForBrick 1.0.0");
+                System.out.println("ForBrick 1.0.1");
                 return 0;
             }
             String command = args[0];
@@ -54,7 +54,7 @@ public final class CommandLine {
                 }
             } else if (command.equals("install")) {
                 service.install(version);
-                System.out.println("ForBrick installed: " + version + ". This version will exit silently on launch.");
+                System.out.println("ForBrick installed: " + version + ". Launch will exit the game and show removal instructions.");
             } else if (command.equals("uninstall")) {
                 service.uninstall(version);
                 System.out.println("ForBrick removed: " + version);
@@ -79,7 +79,7 @@ public final class CommandLine {
     }
 
     private static void help() {
-        System.out.println("ForBrick 1.0.0 - a reversible Minecraft joke loader\n"
+        System.out.println("ForBrick 1.0.1 - a reversible Minecraft joke loader\n"
                 + "Run without arguments to open the installer. Java 8+ is required.\n\n"
                 + "Commands:\n"
                 + "  list          [--minecraft <directory>]\n"

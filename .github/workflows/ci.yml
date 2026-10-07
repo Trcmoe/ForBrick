@@ -33,14 +33,26 @@ jobs:
       - run: mvn -B -ntp verify
       - name: Exercise the real desktop UI
         if: matrix.os == 'ubuntu-latest' && matrix.java == '17'
-        run: xvfb-run -a java -Djava.awt.headless=false -cp "target/test-classes:target/forbrick-installer-1.0.0.jar" dev.forbrick.UiSmoke target/ui-preview
+        run: xvfb-run -a java -Djava.awt.headless=false -cp "target/test-classes:target/forbrick-installer-1.0.1.jar" dev.forbrick.UiSmoke target/ui-preview
+      - name: Exercise the post-exit notice
+        if: matrix.os == 'ubuntu-latest' && matrix.java == '17'
+        timeout-minutes: 3
+        run: xvfb-run -a java -Djava.awt.headless=false -cp "target/test-classes:target/forbrick-installer-1.0.1.jar" dev.forbrick.runtime.NoticeSmoke
+      - name: Exercise native Windows language popup
+        if: matrix.os == 'windows-latest' && matrix.java == '17'
+        timeout-minutes: 3
+        run: java "-Djava.awt.headless=false" -cp "target/test-classes;target/forbrick-installer-1.0.1.jar" dev.forbrick.UiSmoke target/ui-preview
+      - name: Exercise the native post-exit notice
+        if: matrix.os == 'windows-latest' && matrix.java == '17'
+        timeout-minutes: 3
+        run: java "-Djava.awt.headless=false" -cp "target/test-classes;target/forbrick-installer-1.0.1.jar" dev.forbrick.runtime.NoticeSmoke
       - name: Export dependency-free runtime
-        run: java -jar target/forbrick-installer-1.0.0.jar export-runtime --output target/forbrick-runtime-1.0.0.jar
+        run: java -jar target/forbrick-installer-1.0.1.jar export-runtime --output target/forbrick-runtime-1.0.1.jar
       - uses: actions/upload-artifact@v4
         if: matrix.os == 'ubuntu-latest' && matrix.java == '17'
         with:
-          name: ForBrick-1.0.0
+          name: ForBrick-1.0.1
           path: |
-            target/forbrick-installer-1.0.0.jar
-            target/forbrick-runtime-1.0.0.jar
+            target/forbrick-installer-1.0.1.jar
+            target/forbrick-runtime-1.0.1.jar
           if-no-files-found: error

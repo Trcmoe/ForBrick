@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>dev.forbrick</groupId>
   <artifactId>forbrick-installer</artifactId>
-  <version>1.0.0</version>
+  <version>1.0.1</version>
   <name>ForBrick</name>
   <description>A reversible joke loader: every launch ends before Minecraft starts.</description>
   <url>https://github.com/Trcmoe/ForBrick</url>
@@ -12,7 +12,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.source>8</maven.compiler.source>
     <maven.compiler.target>8</maven.compiler.target>
-    <project.build.outputTimestamp>2026-10-06T00:00:00Z</project.build.outputTimestamp>
+    <project.build.outputTimestamp>2026-10-07T00:00:00Z</project.build.outputTimestamp>
   </properties>
   <dependencies>
     <dependency><groupId>com.google.code.gson</groupId><artifactId>gson</artifactId><version>2.13.2</version></dependency>

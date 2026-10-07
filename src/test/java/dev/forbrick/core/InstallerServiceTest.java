@@ -2,6 +2,8 @@ package dev.forbrick.core;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.JsonArray;
+import com.google.gson.GsonBuilder;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
@@ -12,7 +14,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -64,6 +68,7 @@ public class InstallerServiceTest {
             assertEquals("dev.forbrick.runtime.Brick", in.getManifest().getMainAttributes().getValue("Main-Class"));
             assertEquals("dev.forbrick.runtime.Brick", in.getManifest().getMainAttributes().getValue("Premain-Class"));
             assertEquals("dev/forbrick/runtime/Brick.class", in.getNextJarEntry().getName());
+            assertEquals("dev/forbrick/runtime/BrickNotice.class", in.getNextJarEntry().getName());
             assertNull(in.getNextJarEntry());
         }
         assertEquals(1, service.listInstalled().size());
@@ -226,7 +231,129 @@ public class InstallerServiceTest {
         catch (IOException e) { assertTrue(e.getMessage().contains("Runtime library was changed")); }
         assertArrayEquals(foreign, Files.readAllBytes(runtimePath()));
         assertEquals("net.minecraft.client.main.Main", read(json).get("mainClass").getAsString());
-        assertTrue(Files.isRegularFile(root.resolve(".forbrick/runtime-owned.sha256")));
+        assertTrue(Files.isRegularFile(root.resolve(".forbrick/runtime-owned-1.0.1.sha256")));
+    }
+
+    @Test public void legacyInstallUninstallsToExactOriginalBytes() throws Exception {
+        String original = "{\r\n  \"mainClass\": \"old.Main\", \"libraries\": []\r\n}\r\n";
+        Path json = profile("old", original);
+        seedLegacyInstall("old");
+        assertEquals(1, service.listInstalled().size());
+        service.uninstall("old");
+        assertArrayEquals(original.getBytes(StandardCharsets.UTF_8), Files.readAllBytes(json));
+        assertFalse(Files.exists(legacyRuntimePath()));
+        assertFalse(Files.exists(root.resolve(".forbrick")));
+    }
+
+    @Test public void editedLegacyInstallUninstallsAndKeepsUserChanges() throws Exception {
+        Path json = profile("old", "{\"mainClass\":\"old.Main\"}");
+        seedLegacyInstall("old");
+        JsonObject edited = read(json);
+        edited.addProperty("userOption", "keep me");
+        edited.getAsJsonArray("libraries").add(JsonParser.parseString("{\"name\":\"user:library:1\"}"));
+        Files.write(json, edited.toString().getBytes(StandardCharsets.UTF_8));
+        service.uninstall("old");
+        JsonObject restored = read(json);
+        assertEquals("old.Main", restored.get("mainClass").getAsString());
+        assertEquals("keep me", restored.get("userOption").getAsString());
+        assertEquals("user:library:1", restored.getAsJsonArray("libraries").get(0).getAsJsonObject().get("name").getAsString());
+        assertFalse(Files.exists(legacyRuntimePath()));
+    }
+
+    @Test public void repeatedInstallUpgradesLegacyAndKeepsUnrelatedEdits() throws Exception {
+        Path json = profile("old", "{\"mainClass\":\"old.Main\",\"libraries\":[{\"name\":\"other:lib:1\"}]}\n");
+        seedLegacyInstall("old");
+        JsonObject edited = read(json);
+        edited.addProperty("userOption", "keep me");
+        edited.addProperty("minecraftArguments", "--user-flag");
+        edited.getAsJsonArray("libraries").add(JsonParser.parseString("{\"name\":\"user:added:2\"}"));
+        Files.write(json, edited.toString().getBytes(StandardCharsets.UTF_8));
+        service.install("old");
+        JsonObject upgraded = read(json);
+        assertEquals("keep me", upgraded.get("userOption").getAsString());
+        assertEquals("dev.forbrick:runtime:1.0.1", upgraded.getAsJsonArray("libraries").get(1).getAsJsonObject().get("name").getAsString());
+        assertTrue(Files.exists(runtimePath()));
+        assertTrue(Files.exists(legacyRuntimePath()));
+        service.uninstall("old");
+        JsonObject restored = read(json);
+        assertEquals("old.Main", restored.get("mainClass").getAsString());
+        assertEquals("keep me", restored.get("userOption").getAsString());
+        assertEquals("--user-flag", restored.get("minecraftArguments").getAsString());
+        assertEquals(2, restored.getAsJsonArray("libraries").size());
+        assertEquals("user:added:2", restored.getAsJsonArray("libraries").get(1).getAsJsonObject().get("name").getAsString());
+        assertFalse(Files.exists(runtimePath()));
+        assertFalse(Files.exists(legacyRuntimePath()));
+    }
+
+    @Test public void upgradeWithoutOtherEditsRestoresExactOriginalBytes() throws Exception {
+        String original = "{\r\n\"mainClass\":\"old.Main\"\r\n}\r\n";
+        Path json = profile("old", original);
+        seedLegacyInstall("old");
+        service.install("old");
+        service.uninstall("old");
+        assertArrayEquals(original.getBytes(StandardCharsets.UTF_8), Files.readAllBytes(json));
+    }
+
+    @Test public void interruptedUpgradeBeforeProfileWriteCanRestoreBothKindsOfLegacyProfile() throws Exception {
+        String original = "{\r\n\"mainClass\":\"old.Main\"\r\n}\r\n";
+        Path pristine = profile("pristine", original);
+        seedLegacyInstall("pristine");
+        byte[] legacyApplied = Files.readAllBytes(pristine);
+        service.install("pristine");
+        Files.write(pristine, legacyApplied); // upgraded receipt persisted; profile write did not
+        service.uninstall("pristine");
+        assertArrayEquals(original.getBytes(StandardCharsets.UTF_8), Files.readAllBytes(pristine));
+
+        Path edited = profile("edited", original);
+        seedLegacyInstall("edited");
+        JsonObject changed = read(edited);
+        changed.addProperty("userOption", "keep me");
+        Files.write(edited, changed.toString().getBytes(StandardCharsets.UTF_8));
+        byte[] editedLegacy = Files.readAllBytes(edited);
+        service.install("edited");
+        Files.write(edited, editedLegacy); // same interruption, with a prior user edit
+        service.uninstall("edited");
+        assertEquals("old.Main", read(edited).get("mainClass").getAsString());
+        assertEquals("keep me", read(edited).get("userOption").getAsString());
+        assertFalse(Files.exists(runtimePath()));
+        assertFalse(Files.exists(legacyRuntimePath()));
+    }
+
+    @Test public void mixedRuntimeVersionsAreRetainedUntilAllProfilesRestore() throws Exception {
+        profile("old", "{\"mainClass\":\"old.Main\"}");
+        profile("new", "{\"mainClass\":\"new.Main\"}");
+        seedLegacyInstall("old");
+        service.install("new");
+        service.uninstall("new");
+        assertTrue(Files.exists(legacyRuntimePath()));
+        assertTrue(Files.exists(runtimePath()));
+        service.uninstall("old");
+        assertFalse(Files.exists(legacyRuntimePath()));
+        assertFalse(Files.exists(runtimePath()));
+    }
+
+    @Test public void alteredLegacyLibraryCannotBeUpgradedOrRemoved() throws Exception {
+        Path json = profile("old", "{\"mainClass\":\"old.Main\"}");
+        seedLegacyInstall("old");
+        JsonObject altered = read(json);
+        altered.getAsJsonArray("libraries").get(0).getAsJsonObject()
+                .getAsJsonObject("downloads").getAsJsonObject("artifact").addProperty("sha1", "bad");
+        Files.write(json, altered.toString().getBytes(StandardCharsets.UTF_8));
+        expectIOException(() -> service.install("old"));
+        expectIOException(() -> service.uninstall("old"));
+        assertTrue(Files.exists(recordPath("old")));
+        assertTrue(Files.exists(legacyRuntimePath()));
+        assertFalse(Files.exists(runtimePath()));
+    }
+
+    @Test public void changedLegacyRuntimeIsRetainedAfterRestore() throws Exception {
+        Path json = profile("old", "{\"mainClass\":\"old.Main\"}");
+        seedLegacyInstall("old");
+        Files.write(legacyRuntimePath(), new byte[] {3, 2, 1});
+        expectIOException(() -> service.uninstall("old"));
+        assertEquals("old.Main", read(json).get("mainClass").getAsString());
+        assertTrue(Files.exists(root.resolve(".forbrick/runtime-owned.sha256")));
+        assertArrayEquals(new byte[] {3, 2, 1}, Files.readAllBytes(legacyRuntimePath()));
     }
 
     @Test public void sameRootConcurrentThreadsSerialize() throws Exception {
@@ -361,7 +488,62 @@ public class InstallerServiceTest {
         return JsonParser.parseString(new String(Files.readAllBytes(path), StandardCharsets.UTF_8)).getAsJsonObject();
     }
 
-    private Path runtimePath() { return root.resolve("libraries/dev/forbrick/runtime/1.0.0/runtime-1.0.0.jar"); }
+    private Path runtimePath() { return root.resolve("libraries/dev/forbrick/runtime/1.0.1/runtime-1.0.1.jar"); }
+
+    private Path legacyRuntimePath() { return root.resolve("libraries/dev/forbrick/runtime/1.0.0/runtime-1.0.0.jar"); }
+
+    private void seedLegacyInstall(String id) throws Exception {
+        Path json = root.resolve("versions").resolve(id).resolve(id + ".json");
+        byte[] original = Files.readAllBytes(json);
+        byte[] jar;
+        try (java.io.InputStream in = getClass().getResourceAsStream("/dev/forbrick/runtime/forbrick-runtime-1.0.0.jar")) {
+            assertNotNull(in);
+            jar = new byte[816];
+            int offset = 0;
+            while (offset < jar.length) {
+                int count = in.read(jar, offset, jar.length - offset);
+                if (count < 0) throw new IOException("Short legacy runtime resource");
+                offset += count;
+            }
+            assertEquals(-1, in.read());
+        }
+        assertEquals("244068776d1f2a231dcee81845a17d0327fca3ce79f076e4c7a0a7ecd0cdbb63", digest("SHA-256", jar));
+        JsonObject profile = read(json);
+        profile.addProperty("mainClass", "dev.forbrick.runtime.Brick");
+        JsonArray libraries = profile.has("libraries") ? profile.getAsJsonArray("libraries") : new JsonArray();
+        if (!profile.has("libraries")) profile.add("libraries", libraries);
+        JsonObject artifact = new JsonObject();
+        artifact.addProperty("path", "dev/forbrick/runtime/1.0.0/runtime-1.0.0.jar");
+        artifact.addProperty("url", "https://github.com/Trcmoe/ForBrick/releases/download/v1.0.0/forbrick-runtime-1.0.0.jar");
+        artifact.addProperty("sha1", digest("SHA-1", jar));
+        artifact.addProperty("size", jar.length);
+        JsonObject downloads = new JsonObject();
+        downloads.add("artifact", artifact);
+        JsonObject library = new JsonObject();
+        library.addProperty("name", "dev.forbrick:runtime:1.0.0");
+        library.add("downloads", downloads);
+        libraries.add(library);
+        byte[] applied = (new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(profile) + "\n")
+                .getBytes(StandardCharsets.UTF_8);
+        Files.write(json, applied);
+        JsonObject state = new JsonObject();
+        state.addProperty("id", id);
+        state.addProperty("originalBase64", Base64.getEncoder().encodeToString(original));
+        state.addProperty("originalSha256", digest("SHA-256", original));
+        state.addProperty("appliedSha256", digest("SHA-256", applied));
+        Files.createDirectories(recordPath(id).getParent());
+        Files.write(recordPath(id), state.toString().getBytes(StandardCharsets.UTF_8));
+        Files.createDirectories(legacyRuntimePath().getParent());
+        Files.write(legacyRuntimePath(), jar);
+        Files.write(root.resolve(".forbrick/runtime-owned.sha256"), (digest("SHA-256", jar) + "\n").getBytes(StandardCharsets.US_ASCII));
+    }
+
+    private static String digest(String algorithm, byte[] bytes) throws Exception {
+        byte[] hash = MessageDigest.getInstance(algorithm).digest(bytes);
+        StringBuilder result = new StringBuilder();
+        for (byte b : hash) result.append(String.format("%02x", b & 255));
+        return result.toString();
+    }
 
     private Path recordPath(String id) throws IOException {
         StringBuilder hex = new StringBuilder();
