@@ -16,10 +16,13 @@ import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 
 /** The helper owns no game files and exits when its information dialog is closed. */
-public final class BrickNotice {
+public final class BrickNotice implements Runnable {
     static final String RELEASE_URL = "https://github.com/Trcmoe/ForBrick/releases/latest";
+    private final Locale locale;
 
-    private BrickNotice() { }
+    private BrickNotice(Locale locale) { this.locale = locale; }
+
+    @Override public void run() { showNotice(locale); }
 
     public static void main(String[] args) {
         try {
@@ -28,7 +31,8 @@ public final class BrickNotice {
             awaitGameExit(System.in);
             if (GraphicsEnvironment.isHeadless()) return;
             Locale language = Locale.getDefault(Locale.Category.DISPLAY);
-            SwingUtilities.invokeAndWait(() -> showNotice(language));
+            // Avoid compiler-specific lambda bootstrap layouts in the distributed runtime.
+            SwingUtilities.invokeAndWait(new BrickNotice(language));
         } catch (Exception | LinkageError | java.awt.AWTError ignored) {
             // No display, desktop module or working window system: exit without a crash report.
         }
