@@ -24,12 +24,14 @@ public class BrickNoticeTest {
                 Locale.forLanguageTag("zh-HK")}) {
             assertTrue(BrickNotice.message(locale).contains("砖头"));
             assertTrue(BrickNotice.message(locale).contains("卸载"));
+            assertTrue(BrickNotice.message(locale).contains("-javaagent"));
             assertEquals("关闭", BrickNotice.closeLabel(locale));
             assertEquals("打开下载页面", BrickNotice.downloadLabel(locale));
         }
         for (Locale locale : new Locale[] {Locale.ENGLISH, Locale.US, Locale.JAPAN, Locale.ROOT}) {
             assertTrue(BrickNotice.message(locale).contains("brick"));
             assertTrue(BrickNotice.message(locale).contains("Uninstall"));
+            assertTrue(BrickNotice.message(locale).contains("-javaagent"));
             assertEquals("Close", BrickNotice.closeLabel(locale));
             assertEquals("Open downloads", BrickNotice.downloadLabel(locale));
         }

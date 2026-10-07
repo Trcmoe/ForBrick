@@ -42,8 +42,8 @@ public final class BrickNotice {
 
     static String message(Locale locale) {
         return isChinese(locale)
-                ? "该实例由于 ForBrick 的存在已经变成砖头了。\n\n如需卸载 ForBrick，请从 GitHub Release 下载安装器，\n并在安装器的“卸载”页卸载 ForBrick。"
-                : "This instance has turned into a brick because ForBrick is installed.\n\nTo remove ForBrick, download the installer from GitHub Release,\nthen uninstall ForBrick from its Uninstall tab.";
+                ? "该实例由于 ForBrick 的存在已经变成砖头了。\n\n如需卸载 ForBrick，请从 GitHub Release 下载安装器，\n并在安装器的“卸载”页卸载 ForBrick。\n\n手动 Java agent 用户：请移除该实例的 -javaagent 参数。"
+                : "This instance has turned into a brick because ForBrick is installed.\n\nTo remove ForBrick, download the installer from GitHub Release,\nthen uninstall ForBrick from its Uninstall tab.\n\nManual Java agent users: remove this instance's -javaagent option.";
     }
 
     static String downloadLabel(Locale locale) { return isChinese(locale) ? "打开下载页面" : "Open downloads"; }
@@ -52,7 +52,7 @@ public final class BrickNotice {
     static void showNotice(Locale locale) {
         try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
         catch (Exception ignored) { /* Swing's default look and feel also works. */ }
-        JTextArea text = new JTextArea(message(locale), 6, 52);
+        JTextArea text = new JTextArea(message(locale), 8, 52);
         text.setEditable(false);
         text.setLineWrap(true);
         text.setWrapStyleWord(true);
